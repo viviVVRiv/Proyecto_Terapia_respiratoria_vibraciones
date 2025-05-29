@@ -1,0 +1,155 @@
+package com.example.controlmotores
+
+import android.os.Bundle
+import android.widget.*
+import androidx.appcompat.app.AppCompatActivity
+import kotlinx.coroutines.CoroutineScope
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.launch
+import java.net.HttpURLConnection
+import java.net.URL
+
+class MainActivity : AppCompatActivity() {
+
+    private val esp32IPIzquierda = "http://192.168.190.69"
+    private val esp32IPDerecha = "http://192.168.223.178"
+    private var tiempoPorMotor = 2500  // Lento por defecto
+    private var pwmValue = 10
+    private var tiempoTotalMinutos = 1  // Valor inicial de tiempo total
+
+    override fun onCreate(savedInstanceState: Bundle?) {
+        super.onCreate(savedInstanceState)
+        setContentView(R.layout.activity_main)
+
+        val seekBarPWM = findViewById<SeekBar>(R.id.seekBarPWM)
+        val txtValorPWM = findViewById<TextView>(R.id.txtValorPWM)
+        val seekBarTiempo = findViewById<SeekBar>(R.id.seekBarTiempo)
+        val txtValorTiempo = findViewById<TextView>(R.id.txtValorTiempo)
+        val btnLento = findViewById<Button>(R.id.btnLento)
+        val btnModerado = findViewById<Button>(R.id.btnModerado)
+        val btnIzquierda = findViewById<Button>(R.id.btnIzquierda)
+        val btnDerecha = findViewById<Button>(R.id.btnDerecha)
+        val btnSimultaneo = findViewById<Button>(R.id.btnSimultaneo)
+        val btnParar = findViewById<Button>(R.id.btnParar)
+        val txtEstado = findViewById<TextView>(R.id.txtEstado)
+
+        // Configuración SeekBar de Frecuencia
+        seekBarPWM.max = 15  // 25 - 10 = 15 pasos
+        seekBarPWM.progress = 0
+        txtValorPWM.text = "Frecuencia seleccionada: $pwmValue Hz"
+
+        seekBarPWM.setOnSeekBarChangeListener(object : SeekBar.OnSeekBarChangeListener {
+            override fun onProgressChanged(seekBar: SeekBar?, progress: Int, fromUser: Boolean) {
+                pwmValue = progress + 10
+                txtValorPWM.text = "Frecuencia seleccionada: $pwmValue Hz"
+            }
+
+            override fun onStartTrackingTouch(seekBar: SeekBar?) {}
+            override fun onStopTrackingTouch(seekBar: SeekBar?) {}
+        })
+
+        // Configuración SeekBar de Tiempo en minutos
+        seekBarTiempo.max = 29  // 1 a 10 minutos
+        seekBarTiempo.progress = 0
+        txtValorTiempo.text = "Tiempo seleccionado: $tiempoTotalMinutos min"
+
+        seekBarTiempo.setOnSeekBarChangeListener(object : SeekBar.OnSeekBarChangeListener {
+            override fun onProgressChanged(seekBar: SeekBar?, progress: Int, fromUser: Boolean) {
+                tiempoTotalMinutos = progress + 1
+                txtValorTiempo.text = "Tiempo seleccionado: $tiempoTotalMinutos min"
+            }
+
+            override fun onStartTrackingTouch(seekBar: SeekBar?) {}
+            override fun onStopTrackingTouch(seekBar: SeekBar?) {}
+        })
+
+        btnLento.setOnClickListener {
+            tiempoPorMotor = 2500
+            txtEstado.text = "Modo lento seleccionado"
+        }
+
+        btnModerado.setOnClickListener {
+            tiempoPorMotor = 1000
+            txtEstado.text = "Modo moderado seleccionado"
+        }
+
+        btnIzquierda.setOnClickListener {
+            enviarComando(pwmValue, tiempoTotalMinutos, esp32IPIzquierda, txtEstado)
+        }
+
+        btnDerecha.setOnClickListener {
+            enviarComando(pwmValue, tiempoTotalMinutos, esp32IPDerecha, txtEstado)
+        }
+
+        btnSimultaneo.setOnClickListener {
+            enviarComando(pwmValue, tiempoTotalMinutos, esp32IPIzquierda, txtEstado)
+            enviarComando(pwmValue, tiempoTotalMinutos, esp32IPDerecha, txtEstado)
+        }
+
+        btnParar.setOnClickListener {
+            detenerMotores(esp32IPIzquierda, txtEstado)
+            detenerMotores(esp32IPDerecha, txtEstado)
+        }
+    }
+
+    private fun enviarComando(pwm: Int, tiempoMin: Int, ip: String, txtEstado: TextView) {
+        txtEstado.text = "🔄 Enviando datos..."
+        CoroutineScope(Dispatchers.IO).launch {
+            try {
+                val url = URL("$ip/start?frecuencia=$pwm&tiempo=$tiempoMin&tiempoMotor=$tiempoPorMotor")
+                val conn = url.openConnection() as HttpURLConnection
+                conn.requestMethod = "GET"
+                conn.connectTimeout = 5000
+                conn.readTimeout = 5000
+
+                val responseCode = conn.responseCode
+                val responseMessage = conn.inputStream.bufferedReader().readText()
+
+                runOnUiThread {
+                    txtEstado.text = if (responseCode == 200) {
+                        "✅ Comando enviado: $responseMessage"
+                    } else {
+                        "⚠️ Error en la respuesta"
+                    }
+                }
+
+                conn.disconnect()
+            } catch (e: Exception) {
+                e.printStackTrace()
+                runOnUiThread {
+                    txtEstado.text = "❌ No se pudo conectar a la ESP32"
+                }
+            }
+        }
+    }
+
+    private fun detenerMotores(ip: String, txtEstado: TextView) {
+        CoroutineScope(Dispatchers.IO).launch {
+            try {
+                val url = URL("$ip/stop")
+                val conn = url.openConnection() as HttpURLConnection
+                conn.requestMethod = "GET"
+                conn.connectTimeout = 2000
+                conn.readTimeout = 2000
+
+                val responseCode = conn.responseCode
+                val responseMessage = conn.inputStream.bufferedReader().readText()
+
+                runOnUiThread {
+                    if (responseCode == 200) {
+                        txtEstado.append("\n🛑 Motores detenidos en $ip")
+                    } else {
+                        txtEstado.append("\n⚠️ Error al parar en $ip")
+                    }
+                }
+
+                conn.disconnect()
+            } catch (e: Exception) {
+                e.printStackTrace()
+                runOnUiThread {
+                    txtEstado.append("\n⚠️ No se pudo conectar a $ip")
+                }
+            }
+        }
+    }
+}

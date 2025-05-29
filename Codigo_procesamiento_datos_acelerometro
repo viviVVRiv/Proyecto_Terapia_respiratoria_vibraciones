@@ -1,0 +1,109 @@
+import serial
+import time
+import re
+import numpy as np
+import matplotlib.pyplot as plt
+from scipy.fft import fft, fftfreq
+
+
+# Configuración del puerto serial
+puerto = 'COM7'         # Cambia si usas otro puerto
+baudrate = 115200
+tiempo_lectura = 20
+tiempoactual=0      # Segundos para capturar datos
+
+# Regex para extraer solo la magnitud
+regex = re.compile(r"ax:(-?\d+)\s+ay:(-?\d+)\s+az:(-?\d+)\s+magnitud:([\d\.]+)")
+
+# Lista para guardar magnitudes
+magnitudes = []
+tiempos = []
+
+# Conexión serial
+try:
+    arduino = serial.Serial(puerto, baudrate, timeout=1)
+    print(f"Conectado a {puerto}")
+    time.sleep(2)  # Esperar a que se estabilice
+except serial.SerialException:
+    print("No se pudo abrir el puerto serial.")
+    exit()
+
+# Leer datos durante el tiempo especificado
+inicio = time.time()
+tiempoactual=inicio
+ultimo_tiempo = inicio
+contador=0
+vectortime=[]
+while time.time() - inicio < tiempo_lectura:
+    contador+=1
+    vectortime.append(time.time()-tiempoactual)
+    #print(vectortime[-1])
+    tiempoactual=time.time()
+    linea = arduino.readline().decode('utf-8', errors='ignore').strip()
+    match = regex.match(linea)
+    if match:
+        t_actual = time.time()
+        magnitudes.append(float(match.group(4)))
+        tiempos.append(t_actual - ultimo_tiempo)
+        ultimo_tiempo = t_actual
+        print(contador)
+print(contador)
+print(np.mean(vectortime))
+print(time.time()-inicio)
+arduino.close()
+
+# Convertir a arreglo NumPy
+magnitudes_array = np.array(magnitudes)
+
+# Crear eje X como número de muestra
+muestras = np.arange(len(magnitudes_array))
+dt=tiempo_lectura/contador
+muestras=muestras*dt
+
+# Graficar
+plt.figure(figsize=(10, 4))
+plt.plot(muestras, magnitudes_array, label='Magnitud', color='blue')
+plt.xlabel('Tiempo(s)')
+plt.ylabel('Magnitud de aceleración')
+plt.title('Magnitud vs tiempo')
+plt.grid(True)
+plt.legend()
+plt.tight_layout()
+plt.show()
+
+print(f"Lectura completa. Muestras capturadas: {len(magnitudes_array)}")
+frecuencia_muestreo = 1 / np.mean(vectortime)
+print(f"📏 Frecuencia de muestreo estimada: {frecuencia_muestreo:.2f} Hz")
+
+
+#  Aplicar FFT
+n = len(magnitudes_array)
+fft_vals = fft(magnitudes_array)
+fft_freqs = fftfreq(n, 1 / frecuencia_muestreo)
+
+# Filtro pasa alta: eliminar frecuencias por debajo de 5 Hz
+filtro_pasa_alta = fft_freqs > 5  # booleano
+fft_vals_filtrados = fft_vals.copy()
+fft_vals_filtrados[~filtro_pasa_alta] = 0
+
+
+# mitad positiva del espectro
+fft_vals = np.abs(fft_vals_filtrados[:n // 2])
+fft_freqs = fft_freqs[:n // 2]
+
+# Encontrar frecuencia dominante
+indice_frecuencia_dominante = np.argmax(fft_vals[1:]) + 1
+frecuencia_dominante = fft_freqs[indice_frecuencia_dominante]
+magnitud_dominante = fft_vals[indice_frecuencia_dominante]
+
+print(f"🔊 Frecuencia dominante: {frecuencia_dominante:.2f} Hz")
+
+# Graficar el espectro
+plt.figure(figsize=(10, 4))
+plt.plot(fft_freqs[1:], fft_vals[1:], color='purple')
+plt.title('Espectro de Frecuencia')
+plt.xlabel('Frecuencia (Hz)')
+plt.ylabel('Magnitud')
+plt.grid(True)
+plt.tight_layout()
+plt.show()

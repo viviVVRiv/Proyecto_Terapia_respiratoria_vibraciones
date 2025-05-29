@@ -1,0 +1,48 @@
+#include <Wire.h>
+#include <MPU6050.h>
+
+MPU6050 mpu;
+
+void setup() {
+  Serial.begin(115200);   // Velocidad del puerto serial
+  Wire.begin();
+  mpu.initialize();
+
+  if (!mpu.testConnection()) {
+    Serial.println("MPU6050 no conectado.");
+    while (1);  // Detener si no está conectado
+  }
+
+  Serial.println("MPU6050 conectado correctamente.");
+  delay(1000);  // Espera antes de iniciar lectura
+}
+
+void loop() {
+  int16_t ax = mpu.getAccelerationX();  // Lectura del eje X
+  int16_t ay = mpu.getAccelerationY();  // Lectura del eje Y
+  int16_t az = mpu.getAccelerationZ();  // Lectura del eje Z
+
+  // Calcular la magnitud total de la aceleración
+  float magnitud = sqrt(pow(ax, 2) + pow(ay, 2) + pow(az, 2));
+
+  // Verifica que los valores estén siendo enviados correctamente
+  Serial.print("ax:");
+  Serial.print(ax);
+  Serial.print("\t");
+
+  Serial.print("ay:");
+  Serial.print(ay);
+  Serial.print("\t");
+
+  Serial.print("az:");
+  Serial.print(az);
+  Serial.print("\t");
+
+  Serial.print("magnitud:");
+  Serial.println(magnitud);
+
+  // Verifica en el Monitor Serial que todo esté correcto
+  Serial.flush();  // Asegura que todos los datos sean enviados
+
+  delay(10);  // Espera de 10 ms (para 100Hz de muestreo)
+}
